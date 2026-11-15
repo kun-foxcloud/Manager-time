@@ -33,7 +33,7 @@ const MONTH_SHORT = [
   'Dec',
 ];
 
-const MONTH_LONG = [
+export const MONTH_LONG = [
   'January',
   'February',
   'March',

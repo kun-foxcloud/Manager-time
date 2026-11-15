@@ -22,12 +22,11 @@ export type Task = {
   title: string;
 };
 
-export type Kind = 'work1' | 'work2' | 'work3';
+export type Kind = 'work1' | 'work2';
 
 export const WORK_TYPES: { kind: Kind; label: string; color: string }[] = [
-  { kind: 'work1', label: 'Work 1', color: '#5B8DEF' },
-  { kind: 'work2', label: 'Work 2', color: '#8B7CF7' },
-  { kind: 'work3', label: 'Work 3', color: '#F5A25D' },
+  { kind: 'work1', label: 'Joey Tran', color: '#845460' },
+  { kind: 'work2', label: 'Phuc Nguyen', color: '#2B4F60' },
 ];
 
 export const workTypeById = (kind: Kind) =>
@@ -75,7 +74,7 @@ export const USERS: User[] = [
   {
     id: 'u-buiphu',
     name: 'Bùi Thị Phú',
-    initials: 'BP',
+    initials: 'TP',
     role: 'QA Engineer',
     email: 'buiphu@timemanager.app',
     password: 'demo123',

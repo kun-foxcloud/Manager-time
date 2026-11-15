@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AvatarStack } from '../components/AvatarStack';
+import { CalendarPicker } from '../components/CalendarPicker';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SegmentedTabs } from '../components/SegmentedTabs';
 import {
@@ -21,13 +22,10 @@ import { useTime } from '../store/TimeStore';
 import { COLORS, SHADOW } from '../theme';
 import {
   MS,
-  addDays,
   formatDuration,
   formatHoursMinutes,
   formatRelativeDay,
-  periodTitle,
   startOfDay,
-  startOfWeek,
 } from '../utils/time';
 import { useNow } from '../utils/useNow';
 
@@ -89,7 +87,8 @@ export function TimerScreen() {
   const [minutes, setMinutes] = useState(0);
   const [selectedDayMs, setSelectedDayMs] = useState(() => startOfDay(Date.now()));
   const [workType, setWorkType] = useState<Kind>('work1');
-  const [openMenu, setOpenMenu] = useState<'date' | 'type' | null>(null);
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const dayStart = startOfDay(selectedDayMs);
   const myEntries = entries.filter((e) => e.userId === userId && e.dayMs === dayStart);
@@ -100,12 +99,7 @@ export function TimerScreen() {
   const percentLabel = todayWorkMs > 0 ? `${Math.max(1, Math.round(progress * 100))}%` : '0%';
 
   const draftMs = hours * MS.HOUR + minutes * MS.MINUTE;
-  const isCurrentWeek = startOfWeek(dayStart) >= startOfWeek(startOfDay(now));
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(selectedDayMs), i));
-
-  const toggleMenu = (menu: 'date' | 'type') => {
-    setOpenMenu((prev) => (prev === menu ? null : menu));
-  };
+  const activeWorkType = workTypeById(workType);
 
   const usersOnProjectToday = (projectId: string): User[] => {
     const ids = new Set(
@@ -124,10 +118,6 @@ export function TimerScreen() {
     });
   };
 
-  const shiftDay = (delta: number) => {
-    setSelectedDayMs((prev) => addDays(startOfDay(prev), delta));
-  };
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
@@ -138,74 +128,30 @@ export function TimerScreen() {
 
         <View style={styles.selectRow}>
           <View style={styles.selectWrap}>
-            <Pressable onPress={() => toggleMenu('date')} style={styles.selectBox}>
+            <Pressable onPress={() => setCalendarOpen(true)} style={styles.selectBox}>
               <Ionicons name="calendar-outline" size={14} color={COLORS.muted} />
               <Text style={styles.selectValue} numberOfLines={1}>
                 {formatRelativeDay(dayStart, now)}
               </Text>
-              <Ionicons
-                name={openMenu === 'date' ? 'chevron-up' : 'chevron-down'}
-                size={14}
-                color={COLORS.muted}
-              />
+              <Ionicons name="chevron-down" size={14} color={COLORS.muted} />
             </Pressable>
-            {openMenu === 'date' && (
-              <View style={styles.menuCard}>
-                <View style={styles.menuNav}>
-                  <Pressable onPress={() => shiftDay(-7)} hitSlop={8}>
-                    <Ionicons name="chevron-back" size={16} color={COLORS.primary} />
-                  </Pressable>
-                  <Text style={styles.menuNavLabel}>{periodTitle('week', selectedDayMs)}</Text>
-                  <Pressable onPress={() => shiftDay(7)} disabled={isCurrentWeek} hitSlop={8}>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={16}
-                      color={isCurrentWeek ? COLORS.faint : COLORS.primary}
-                    />
-                  </Pressable>
-                </View>
-                {weekDays.map((dayMs) => {
-                  const selected = dayMs === dayStart;
-                  return (
-                    <Pressable
-                      key={dayMs}
-                      onPress={() => {
-                        setSelectedDayMs(dayMs);
-                        setOpenMenu(null);
-                      }}
-                      style={styles.menuOption}
-                    >
-                      <Text
-                        style={[
-                          styles.menuOptionText,
-                          selected && styles.menuOptionActive,
-                        ]}
-                      >
-                        {formatRelativeDay(dayMs, now)}
-                      </Text>
-                      {selected && <Ionicons name="checkmark" size={14} color={COLORS.primary} />}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
           </View>
 
           <View style={styles.selectWrap}>
-            <Pressable onPress={() => toggleMenu('type')} style={styles.selectBox}>
-              <View
-                style={[styles.userDot, { backgroundColor: workTypeById(workType).color }]}
-              />
+            <Pressable onPress={() => setTypeMenuOpen((open) => !open)} style={styles.selectBox}>
+              <View style={[styles.typeAvatar, { backgroundColor: activeWorkType.color }]}>
+                <Text style={styles.typeAvatarText}>{activeWorkType.label.charAt(0)}</Text>
+              </View>
               <Text style={styles.selectValue} numberOfLines={1}>
-                {workTypeById(workType).label}
+                {activeWorkType.label}
               </Text>
               <Ionicons
-                name={openMenu === 'type' ? 'chevron-up' : 'chevron-down'}
+                name={typeMenuOpen ? 'chevron-up' : 'chevron-down'}
                 size={14}
                 color={COLORS.muted}
               />
             </Pressable>
-            {openMenu === 'type' && (
+            {typeMenuOpen && (
               <View style={styles.menuCard}>
                 {WORK_TYPES.map((t) => {
                   const selected = t.kind === workType;
@@ -214,11 +160,13 @@ export function TimerScreen() {
                       key={t.kind}
                       onPress={() => {
                         setWorkType(t.kind);
-                        setOpenMenu(null);
+                        setTypeMenuOpen(false);
                       }}
                       style={styles.menuOption}
                     >
-                      <View style={[styles.userDot, { backgroundColor: t.color }]} />
+                      <View style={[styles.typeAvatar, { backgroundColor: t.color }]}>
+                        <Text style={styles.typeAvatarText}>{t.label.charAt(0)}</Text>
+                      </View>
                       <Text
                         style={[
                           styles.menuOptionText,
@@ -313,6 +261,18 @@ export function TimerScreen() {
           }}
         />
       </View>
+
+      {calendarOpen && (
+        <CalendarPicker
+          mode="single"
+          selectedDayMs={dayStart}
+          onSelect={(dayMs) => {
+            setSelectedDayMs(dayMs);
+            setCalendarOpen(false);
+          }}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -413,10 +373,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    height: 42,
     backgroundColor: COLORS.card,
     borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 10,
     ...SHADOW,
   },
   selectValue: {
@@ -425,10 +385,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.ink,
   },
-  userDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  typeAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeAvatarText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   menuCard: {
     position: 'absolute',
@@ -442,20 +409,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     ...SHADOW,
     zIndex: 20,
-  },
-  menuNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.faint,
-    marginBottom: 4,
-  },
-  menuNavLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.ink,
   },
   menuOption: {
     flexDirection: 'row',

@@ -62,6 +62,7 @@ type TimeContextValue = {
   login: (email: string, password: string) => string | null;
   logout: () => void;
   addEntry: (input: AddEntryInput) => void;
+  updateEntry: (id: string, change: { dayMs: number; kind: Kind }) => void;
   removeEntry: (id: string) => void;
   setUsdToVnd: (rate: number) => void;
   setHourlyRate: (userId: string, usdPerHour: number) => void;
@@ -177,6 +178,14 @@ export function TimeProvider({ children }: { children: React.ReactNode }) {
     [user, entries.length],
   );
 
+  const updateEntry = useCallback((id: string, change: { dayMs: number; kind: Kind }) => {
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, dayMs: startOfDay(change.dayMs), kind: change.kind } : e,
+      ),
+    );
+  }, []);
+
   const removeEntry = useCallback((id: string) => {
     setEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
@@ -205,6 +214,7 @@ export function TimeProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       addEntry,
+      updateEntry,
       removeEntry,
       setUsdToVnd,
       setHourlyRate,
@@ -218,6 +228,7 @@ export function TimeProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       addEntry,
+      updateEntry,
       removeEntry,
       setUsdToVnd,
       setHourlyRate,

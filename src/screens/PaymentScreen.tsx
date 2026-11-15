@@ -1,7 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as MediaLibrary from 'expo-media-library';
+import React, { useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { User, USERS } from '../data/catalog';
 import { useTime } from '../store/TimeStore';
@@ -22,6 +34,8 @@ export function PaymentScreen() {
   const [hourlyDrafts, setHourlyDrafts] = useState<Record<string, string>>({});
   const [filterUserId, setFilterUserId] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [exportPhase, setExportPhase] = useState<'idle' | 'capturing' | 'saving'>('idle');
+  const exportRef = useRef<React.ComponentRef<typeof View>>(null);
 
   const range = periodRange('month', anchor);
   const monthEntries = entries.filter(
@@ -49,6 +63,36 @@ export function PaymentScreen() {
 
   const totalUsd = rows.reduce((acc, r) => acc + r.usd, 0);
   const totalVnd = rows.reduce((acc, r) => acc + r.vnd, 0);
+
+  async function exportInvoiceImage() {
+    if (exportPhase !== 'idle') return;
+    setExportPhase('capturing');
+    try {
+      if (Platform.OS === 'web') {
+        const dataUri = await captureRef(exportRef, { format: 'png', result: 'data-uri' });
+        const month = new Date(anchor);
+        const stamp = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+        const link = document.createElement('a');
+        link.href = dataUri;
+        link.download = `invoice-${stamp}.png`;
+        link.click();
+        return;
+      }
+      const imageUri = await captureRef(exportRef, { format: 'png', result: 'tmpfile' });
+      setExportPhase('saving');
+      const permission = await MediaLibrary.requestPermissionsAsync(true, ['photo']);
+      if (permission.status !== 'granted') {
+        Alert.alert('Photos access needed', 'Allow photo access to save the invoice image.');
+        return;
+      }
+      await MediaLibrary.Asset.create(imageUri);
+      Alert.alert('Saved', 'Invoice image saved to Photos.');
+    } catch {
+      Alert.alert('Export failed', 'Could not save the invoice image.');
+    } finally {
+      setExportPhase('idle');
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -151,37 +195,53 @@ export function PaymentScreen() {
         )}
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>Total ({periodTitle('month', anchor)})</Text>
-            <Text style={styles.totalVnd}>{formatVnd(totalVnd)}</Text>
-            <Text style={styles.totalUsd}>{formatUsd(totalUsd)}</Text>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>By person</Text>
-              <Ionicons name="receipt-outline" size={18} color={COLORS.muted} />
+          <View ref={exportRef} collapsable={false} style={styles.exportBlock}>
+            <View style={styles.totalCard}>
+              <Text style={styles.totalLabel}>Total ({periodTitle('month', anchor)})</Text>
+              <Text style={styles.totalVnd}>{formatVnd(totalVnd)}</Text>
+              <Text style={styles.totalUsd}>{formatUsd(totalUsd)}</Text>
             </View>
-            {rows.map(({ person, ms, hourly, usd, vnd }) => (
-              <View key={person.id} style={styles.personRow}>
-                <View style={[styles.personDot, { backgroundColor: person.color }]} />
-                <View style={styles.personInfo}>
-                  <Text style={styles.personName}>{person.name}</Text>
-                  <Text style={styles.personHours}>
-                    {formatHoursMinutes(ms)} · {formatUsd(hourly)}/h
+
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>Invoice</Text>
+                <Pressable
+                  onPress={exportInvoiceImage}
+                  disabled={exportPhase !== 'idle'}
+                  hitSlop={8}
+                  style={styles.exportButton}
+                >
+                  {exportPhase === 'saving' ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <Ionicons name="download-outline" size={16} color={COLORS.primary} />
+                  )}
+                  <Text style={styles.exportLabel}>
+                    {exportPhase === 'saving' ? 'Saving' : 'Export'}
                   </Text>
-                </View>
-                <View style={styles.personAmounts}>
-                  <Text style={styles.personVnd}>{formatVnd(vnd)}</Text>
-                  <Text style={styles.personUsd}>{formatUsd(usd)}</Text>
-                </View>
+                </Pressable>
               </View>
-            ))}
+              {rows.map(({ person, ms, hourly, usd, vnd }) => (
+                <View key={person.id} style={styles.personRow}>
+                  <View style={[styles.personDot, { backgroundColor: person.color }]} />
+                  <View style={styles.personInfo}>
+                    <Text style={styles.personName}>{person.name}</Text>
+                    <Text style={styles.personHours}>
+                      {formatHoursMinutes(ms)} · {formatUsd(hourly)}/h
+                    </Text>
+                  </View>
+                  <View style={styles.personAmounts}>
+                    <Text style={styles.personVnd}>{formatVnd(vnd)}</Text>
+                    <Text style={styles.personUsd}>{formatUsd(usd)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
 
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Settings</Text>
+              <Text style={styles.cardTitle}>Config</Text>
               <Ionicons name="settings-outline" size={18} color={COLORS.muted} />
             </View>
 
@@ -342,6 +402,27 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
     marginTop: 16,
+  },
+  exportBlock: {
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginHorizontal: -16,
+    marginVertical: -16,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EEF3FE',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  exportLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   totalCard: {
     backgroundColor: COLORS.primary,

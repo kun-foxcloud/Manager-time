@@ -3,6 +3,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,12 +11,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AvatarStack } from '../components/AvatarStack';
+import { CalendarPicker } from '../components/CalendarPicker';
+import { DateStrip } from '../components/DateStrip';
+import { EditEntryModal } from '../components/EditEntryModal';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { WeekStrip } from '../components/WeekStrip';
-import { TimeEntry, User, projectById, userById, workTypeById } from '../data/catalog';
+import {
+  TimeEntry,
+  USERS,
+  User,
+  projectById,
+  userById,
+  workTypeById,
+} from '../data/catalog';
 import { useTime } from '../store/TimeStore';
 import { COLORS, SHADOW } from '../theme';
 import {
+  addMonths,
   formatClock,
   formatDayHeading,
   formatHoursMinutes,
@@ -29,21 +40,42 @@ type TrashRect = { x: number; y: number; width: number; height: number };
 const LONG_PRESS_MS = 180;
 
 export function TasksScreen() {
-  const { entries, removeEntry } = useTime();
+  const { user, entries, updateEntry, removeEntry } = useTime();
   const now = useNow(30_000);
+  const [range, setRange] = useState(() => {
+    const endMs = startOfDay(Date.now());
+    return { startMs: addMonths(endMs, -1), endMs };
+  });
   const [selectedDayMs, setSelectedDayMs] = useState(() => startOfDay(Date.now()));
+  const [filterUserId, setFilterUserId] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [overTrash, setOverTrash] = useState(false);
   const trashRef = useRef<React.ComponentRef<typeof View>>(null);
   const trashRectRef = useRef<TrashRect | null>(null);
 
+  const isAdmin = user?.isAdmin === true;
+  const filterUser = USERS.find((u) => u.id === filterUserId) ?? null;
+  const loggedUserId = user?.id ?? null;
+  const editingEntry = entries.find((e) => e.id === editingEntryId) ?? null;
+
   const dayStart = startOfDay(selectedDayMs);
   const dayEntries = useMemo(
-    () => entries.filter((e) => e.dayMs === dayStart && e.durationMs > 0),
-    [entries, dayStart],
+    () =>
+      entries.filter(
+        (e) =>
+          e.dayMs === dayStart &&
+          e.durationMs > 0 &&
+          (isAdmin
+            ? filterUserId === null || e.userId === filterUserId
+            : e.userId === loggedUserId),
+      ),
+    [entries, dayStart, isAdmin, filterUserId, loggedUserId],
   );
 
-  const usersOnProjectToday = (projectId: string): User[] => {
+  const teammatesOnProject = (projectId: string): User[] => {
     const ids = new Set(dayEntries.filter((e) => e.projectId === projectId).map((e) => e.userId));
     return [...ids].map(userById);
   };
@@ -76,8 +108,102 @@ export function TasksScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
-        <ScreenHeader title="Task Management" />
-        <WeekStrip selectedDayMs={selectedDayMs} onSelect={setSelectedDayMs} />
+        <ScreenHeader
+          title="Task Management"
+          right={
+            <Pressable onPress={() => setCalendarOpen(true)} style={styles.calendarButton}>
+              <Ionicons name="calendar-outline" size={20} color={COLORS.ink} />
+            </Pressable>
+          }
+        />
+        <DateStrip
+          startDayMs={range.startMs}
+          endDayMs={range.endMs}
+          selectedDayMs={selectedDayMs}
+          onSelect={setSelectedDayMs}
+        />
+
+        {isAdmin && (
+          <View style={styles.filterWrap}>
+            <Pressable
+              onPress={() => setFilterOpen((open) => !open)}
+              style={[styles.filterTrigger, filterOpen && styles.filterTriggerOpen]}
+            >
+              <View
+                style={[
+                  styles.filterAvatar,
+                  { backgroundColor: filterUser?.color ?? COLORS.primary },
+                ]}
+              >
+                {filterUser ? (
+                  <Text style={styles.filterAvatarText}>{filterUser.initials}</Text>
+                ) : (
+                  <Ionicons name="people" size={16} color="#FFFFFF" />
+                )}
+              </View>
+              <Text style={styles.filterLabel}>
+                {filterUser ? filterUser.name : 'All users'}
+              </Text>
+              <Ionicons
+                name={filterOpen ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={COLORS.muted}
+              />
+            </Pressable>
+
+            {filterOpen && (
+              <View style={styles.filterMenu}>
+                <Pressable
+                  onPress={() => {
+                    setFilterUserId(null);
+                    setFilterOpen(false);
+                  }}
+                  style={[styles.filterOption, !filterUser && styles.filterOptionSelected]}
+                >
+                  <View style={[styles.filterAvatar, styles.filterOptionAvatar]}>
+                    <Ionicons name="people" size={14} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.filterOptionMeta}>
+                    <Text style={styles.filterOptionName}>All users</Text>
+                  </View>
+                  {!filterUser && (
+                    <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                  )}
+                </Pressable>
+                {USERS.map((person) => {
+                  const selected = person.id === filterUserId;
+                  return (
+                    <Pressable
+                      key={person.id}
+                      onPress={() => {
+                        setFilterUserId(person.id);
+                        setFilterOpen(false);
+                      }}
+                      style={[styles.filterOption, selected && styles.filterOptionSelected]}
+                    >
+                      <View
+                        style={[
+                          styles.filterAvatar,
+                          styles.filterOptionAvatar,
+                          { backgroundColor: person.color },
+                        ]}
+                      >
+                        <Text style={styles.filterAvatarText}>{person.initials}</Text>
+                      </View>
+                      <View style={styles.filterOptionMeta}>
+                        <Text style={styles.filterOptionName}>{person.name}</Text>
+                        <Text style={styles.filterOptionRole}>{person.role}</Text>
+                      </View>
+                      {selected && (
+                        <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.dayRow}>
           <Text style={styles.dayHeading}>{formatDayHeading(selectedDayMs)}</Text>
@@ -99,10 +225,11 @@ export function TasksScreen() {
               <EntryCard
                 key={entry.id}
                 entry={entry}
-                teammates={usersOnProjectToday(entry.projectId)}
+                teammates={teammatesOnProject(entry.projectId)}
                 now={now}
                 isOverTrash={isOverTrash}
                 onDrop={handleDrop}
+                onEdit={() => setEditingEntryId(entry.id)}
                 onHoverTrash={setOverTrash}
                 onDragStateChange={setDragActive}
               />
@@ -131,6 +258,31 @@ export function TasksScreen() {
           </View>
         )}
       </View>
+
+      {calendarOpen && (
+        <CalendarPicker
+          mode="range"
+          rangeStartMs={range.startMs}
+          rangeEndMs={range.endMs}
+          onSelectRange={(startMs, endMs) => {
+            setRange({ startMs, endMs });
+            setSelectedDayMs((prev) => (prev < startMs || prev > endMs ? endMs : prev));
+            setCalendarOpen(false);
+          }}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
+
+      {editingEntry && (
+        <EditEntryModal
+          entry={editingEntry}
+          onSave={(change) => {
+            updateEntry(editingEntry.id, change);
+            setEditingEntryId(null);
+          }}
+          onClose={() => setEditingEntryId(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -142,6 +294,7 @@ function EntryCard({
   onDragStateChange,
   onHoverTrash,
   onDrop,
+  onEdit,
   isOverTrash,
 }: {
   entry: TimeEntry;
@@ -150,6 +303,7 @@ function EntryCard({
   onDragStateChange: (active: boolean) => void;
   onHoverTrash: (over: boolean) => void;
   onDrop: (entryId: string, pageX: number, pageY: number) => void;
+  onEdit: () => void;
   isOverTrash: (pageX: number, pageY: number) => boolean;
 }) {
   const project = projectById(entry.projectId);
@@ -206,33 +360,40 @@ function EntryCard({
   });
 
   return (
-    <Animated.View
-      {...responder.panHandlers}
-      style={[
-        styles.entryCard,
-        { backgroundColor: project.color },
-        lifting && styles.entryCardLifting,
-        { transform: pan.getTranslateTransform() },
-      ]}
-    >
-      <View style={styles.entryHeader}>
-        <Text style={styles.entryProject}>{project.name}</Text>
-        <View style={styles.entryDurationRow}>
-          <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.95)" />
-          <Text style={styles.entryDuration}>{formatHoursMinutes(entry.durationMs)}</Text>
+    <View style={styles.entryWrap}>
+      <Animated.View
+        {...responder.panHandlers}
+        style={[
+          styles.entryCard,
+          { backgroundColor: project.color },
+          lifting && styles.entryCardLifting,
+          { transform: pan.getTranslateTransform() },
+        ]}
+      >
+        <View style={styles.entryHeader}>
+          <Text style={styles.entryProject}>{project.name}</Text>
+          <View style={styles.entryDurationRow}>
+            <Ionicons name="time" size={12} color="#FFFFFF" />
+            <Text style={styles.entryDuration}>{formatHoursMinutes(entry.durationMs)}</Text>
+          </View>
         </View>
-      </View>
-      <Text style={styles.entryTitle} numberOfLines={2}>
-        {formatRelativeDay(entry.dayMs, now)}
-      </Text>
-      <View style={styles.entryFooter}>
-        <AvatarStack users={teammates} size={18} />
-        <Text style={styles.entryOwner}>{owner.name}</Text>
-        <View style={styles.typeBadge}>
-          <Text style={styles.typeBadgeText}>{workType.label}</Text>
+        <Text style={styles.entryTitle} numberOfLines={2}>
+          {formatRelativeDay(entry.dayMs, now)}
+        </Text>
+        <View style={styles.entryFooter}>
+          <AvatarStack users={teammates} size={18} />
+          <Text style={styles.entryOwner}>{owner.name}</Text>
+          <View style={[styles.typeBadge, { backgroundColor: workType.color }]}>
+            <Text style={styles.typeBadgeText}>{workType.label}</Text>
+          </View>
         </View>
-      </View>
-    </Animated.View>
+      </Animated.View>
+      {!lifting && (
+        <Pressable onPress={onEdit} hitSlop={6} style={styles.entryEditButton}>
+          <Ionicons name="pencil" size={12} color="#FFFFFF" />
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -244,6 +405,97 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 22,
+  },
+  calendarButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: '#E6EAF3',
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterWrap: {
+    marginTop: 12,
+    position: 'relative',
+    zIndex: 20,
+  },
+  filterTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  filterTriggerOpen: {
+    borderColor: '#D8E2FB',
+  },
+  filterAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterAvatarText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  filterLabel: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  filterMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 6,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E6EBF7',
+    padding: 6,
+    zIndex: 30,
+    ...SHADOW,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 8,
+  },
+  filterOptionSelected: {
+    backgroundColor: '#F0F4FE',
+  },
+  filterOptionAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EEF3FE',
+  },
+  filterOptionMeta: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  filterOptionName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  filterOptionRole: {
+    marginTop: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.muted,
   },
   dayRow: {
     flexDirection: 'row',
@@ -275,6 +527,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.muted,
   },
+  entryWrap: {
+    position: 'relative',
+  },
   entryCard: {
     borderRadius: 18,
     paddingHorizontal: 16,
@@ -294,6 +549,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingRight: 30,
+  },
+  entryEditButton: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   entryProject: {
     fontSize: 11,
@@ -305,16 +572,18 @@ const styles = StyleSheet.create({
   entryDurationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: 10,
+    gap: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   entryDuration: {
-    marginLeft: 4,
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#FFFFFF',
+    fontVariant: ['tabular-nums'],
   },
   entryTitle: {
     marginTop: 8,
@@ -336,10 +605,9 @@ const styles = StyleSheet.create({
   },
   typeBadge: {
     marginLeft: 'auto',
-    backgroundColor: 'rgba(255,255,255,0.25)',
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   typeBadgeText: {
     fontSize: 10,
