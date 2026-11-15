@@ -47,7 +47,7 @@ export function TasksScreen() {
     return { startMs: addMonths(endMs, -1), endMs };
   });
   const [selectedDayMs, setSelectedDayMs] = useState(() => startOfDay(Date.now()));
-  const [filterUserId, setFilterUserId] = useState<string | null>(null);
+  const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -57,7 +57,8 @@ export function TasksScreen() {
   const trashRectRef = useRef<TrashRect | null>(null);
 
   const isAdmin = user?.isAdmin === true;
-  const filterUser = USERS.find((u) => u.id === filterUserId) ?? null;
+  const filterUsers = USERS.filter((u) => filterUserIds.includes(u.id));
+  const singleFilterUser = filterUsers.length === 1 ? filterUsers[0] : null;
   const loggedUserId = user?.id ?? null;
   const editingEntry = entries.find((e) => e.id === editingEntryId) ?? null;
 
@@ -69,10 +70,10 @@ export function TasksScreen() {
           e.dayMs === dayStart &&
           e.durationMs > 0 &&
           (isAdmin
-            ? filterUserId === null || e.userId === filterUserId
+            ? filterUserIds.length === 0 || filterUserIds.includes(e.userId)
             : e.userId === loggedUserId),
       ),
-    [entries, dayStart, isAdmin, filterUserId, loggedUserId],
+    [entries, dayStart, isAdmin, filterUserIds, loggedUserId],
   );
 
   const teammatesOnProject = (projectId: string): User[] => {
@@ -132,17 +133,19 @@ export function TasksScreen() {
               <View
                 style={[
                   styles.filterAvatar,
-                  { backgroundColor: filterUser?.color ?? COLORS.primary },
+                  { backgroundColor: singleFilterUser?.color ?? COLORS.primary },
                 ]}
               >
-                {filterUser ? (
-                  <Text style={styles.filterAvatarText}>{filterUser.initials}</Text>
+                {singleFilterUser ? (
+                  <Text style={styles.filterAvatarText}>{singleFilterUser.initials}</Text>
                 ) : (
                   <Ionicons name="people" size={16} color="#FFFFFF" />
                 )}
               </View>
-              <Text style={styles.filterLabel}>
-                {filterUser ? filterUser.name : 'All users'}
+              <Text style={styles.filterLabel} numberOfLines={1}>
+                {filterUsers.length > 0
+                  ? filterUsers.map((u) => u.name).join(', ')
+                  : 'All users'}
               </Text>
               <Ionicons
                 name={filterOpen ? 'chevron-up' : 'chevron-down'}
@@ -154,11 +157,11 @@ export function TasksScreen() {
             {filterOpen && (
               <View style={styles.filterMenu}>
                 <Pressable
-                  onPress={() => {
-                    setFilterUserId(null);
-                    setFilterOpen(false);
-                  }}
-                  style={[styles.filterOption, !filterUser && styles.filterOptionSelected]}
+                  onPress={() => setFilterUserIds([])}
+                  style={[
+                    styles.filterOption,
+                    filterUsers.length === 0 && styles.filterOptionSelected,
+                  ]}
                 >
                   <View style={[styles.filterAvatar, styles.filterOptionAvatar]}>
                     <Ionicons name="people" size={14} color={COLORS.primary} />
@@ -166,19 +169,22 @@ export function TasksScreen() {
                   <View style={styles.filterOptionMeta}>
                     <Text style={styles.filterOptionName}>All users</Text>
                   </View>
-                  {!filterUser && (
+                  {filterUsers.length === 0 && (
                     <Ionicons name="checkmark" size={18} color={COLORS.primary} />
                   )}
                 </Pressable>
                 {USERS.map((person) => {
-                  const selected = person.id === filterUserId;
+                  const selected = filterUserIds.includes(person.id);
                   return (
                     <Pressable
                       key={person.id}
-                      onPress={() => {
-                        setFilterUserId(person.id);
-                        setFilterOpen(false);
-                      }}
+                      onPress={() =>
+                        setFilterUserIds((ids) =>
+                          ids.includes(person.id)
+                            ? ids.filter((id) => id !== person.id)
+                            : [...ids, person.id],
+                        )
+                      }
                       style={[styles.filterOption, selected && styles.filterOptionSelected]}
                     >
                       <View
@@ -464,6 +470,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E6EBF7',
     padding: 6,
+    gap: 4,
     zIndex: 30,
     ...SHADOW,
   },

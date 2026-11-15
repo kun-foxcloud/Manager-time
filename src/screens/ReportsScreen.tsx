@@ -6,7 +6,7 @@ import { DonutChart } from '../components/DonutChart';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SegmentedTabs } from '../components/SegmentedTabs';
 import { BarBucket, StackedBarChart } from '../components/StackedBarChart';
-import { PROJECTS } from '../data/catalog';
+import { PROJECTS, USERS } from '../data/catalog';
 import { useTime } from '../store/TimeStore';
 import { COLORS, SHADOW } from '../theme';
 import {
@@ -27,15 +27,27 @@ const PERIOD_OPTIONS = [
 ];
 
 export function ReportsScreen() {
-  const { entries } = useTime();
+  const { user, entries } = useTime();
   const [period, setPeriod] = useState<Period>('week');
   const [anchor, setAnchor] = useState(() => Date.now());
+  const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const isAdmin = user?.isAdmin === true;
+  const loggedUserId = user?.id ?? null;
+  const filterUsers = USERS.filter((u) => filterUserIds.includes(u.id));
+  const singleFilterUser = filterUsers.length === 1 ? filterUsers[0] : null;
 
   const range = periodRange(period, anchor);
 
   const report = useMemo(() => {
     const periodEntries = entries.filter(
-      (e) => e.dayMs >= range.startMs && e.dayMs < range.endMs,
+      (e) =>
+        e.dayMs >= range.startMs &&
+        e.dayMs < range.endMs &&
+        (isAdmin
+          ? filterUserIds.length === 0 || filterUserIds.includes(e.userId)
+          : e.userId === loggedUserId),
     );
     const totalMs = periodEntries.reduce((acc, e) => acc + e.durationMs, 0);
 
@@ -72,7 +84,7 @@ export function ReportsScreen() {
       period === 'week' ? 24 : Math.max(4, Math.ceil(maxBucketMs / 3_600_000 / 4) * 4);
 
     return { totalMs, byProject, buckets, maxHours };
-  }, [entries, period, range]);
+  }, [entries, period, range, isAdmin, filterUserIds, loggedUserId]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -91,6 +103,90 @@ export function ReportsScreen() {
             <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
           </Pressable>
         </View>
+
+        {isAdmin && (
+          <View style={styles.filterWrap}>
+            <Pressable
+              onPress={() => setFilterOpen((open) => !open)}
+              style={[styles.filterTrigger, filterOpen && styles.filterTriggerOpen]}
+            >
+              <View
+                style={[
+                  styles.filterAvatar,
+                  { backgroundColor: singleFilterUser?.color ?? COLORS.primary },
+                ]}
+              >
+                {singleFilterUser ? (
+                  <Text style={styles.filterAvatarText}>{singleFilterUser.initials}</Text>
+                ) : (
+                  <Ionicons name="people" size={16} color="#FFFFFF" />
+                )}
+              </View>
+              <Text style={styles.filterLabel} numberOfLines={1}>
+                {filterUsers.length > 0
+                  ? filterUsers.map((u) => u.name).join(', ')
+                  : 'All users'}
+              </Text>
+              <Ionicons
+                name={filterOpen ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={COLORS.muted}
+              />
+            </Pressable>
+
+            {filterOpen && (
+              <View style={styles.filterMenu}>
+                <Pressable
+                  onPress={() => setFilterUserIds([])}
+                  style={[styles.filterOption, filterUsers.length === 0 && styles.filterOptionSelected]}
+                >
+                  <View style={[styles.filterAvatar, styles.filterOptionAvatar]}>
+                    <Ionicons name="people" size={14} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.filterOptionMeta}>
+                    <Text style={styles.filterOptionName}>All users</Text>
+                  </View>
+                  {filterUsers.length === 0 && (
+                    <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                  )}
+                </Pressable>
+                {USERS.map((person) => {
+                  const selected = filterUserIds.includes(person.id);
+                  return (
+                    <Pressable
+                      key={person.id}
+                      onPress={() =>
+                        setFilterUserIds((ids) =>
+                          ids.includes(person.id)
+                            ? ids.filter((id) => id !== person.id)
+                            : [...ids, person.id],
+                        )
+                      }
+                      style={[styles.filterOption, selected && styles.filterOptionSelected]}
+                    >
+                      <View
+                        style={[
+                          styles.filterAvatar,
+                          styles.filterOptionAvatar,
+                          { backgroundColor: person.color },
+                        ]}
+                      >
+                        <Text style={styles.filterAvatarText}>{person.initials}</Text>
+                      </View>
+                      <View style={styles.filterOptionMeta}>
+                        <Text style={styles.filterOptionName}>{person.name}</Text>
+                        <Text style={styles.filterOptionRole}>{person.role}</Text>
+                      </View>
+                      {selected && (
+                        <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
           <View style={styles.card}>
@@ -174,6 +270,88 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.ink,
+  },
+  filterWrap: {
+    marginTop: 12,
+    position: 'relative',
+    zIndex: 20,
+  },
+  filterTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  filterTriggerOpen: {
+    borderColor: '#D8E2FB',
+  },
+  filterAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterAvatarText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  filterLabel: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  filterMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 6,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E6EBF7',
+    padding: 6,
+    gap: 4,
+    zIndex: 30,
+    ...SHADOW,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 8,
+  },
+  filterOptionSelected: {
+    backgroundColor: '#F0F4FE',
+  },
+  filterOptionAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EEF3FE',
+  },
+  filterOptionMeta: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  filterOptionName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  filterOptionRole: {
+    marginTop: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.muted,
   },
   scroll: {
     flex: 1,

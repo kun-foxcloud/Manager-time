@@ -17,9 +17,15 @@ type Props = {
 
 const PAD_LEFT = 34;
 const PAD_RIGHT = 6;
-const PAD_TOP = 10;
+const PAD_TOP = 18;
 const PAD_BOTTOM = 24;
 const TICKS = 6;
+
+function formatBarHours(ms: number) {
+  const hours = ms / 3_600_000;
+  if (hours >= 1) return `${Math.round(hours * 10) / 10}h`;
+  return `${Math.max(1, Math.round(ms / 60_000))}m`;
+}
 
 export function StackedBarChart({ buckets, maxHours, height = 190 }: Props) {
   const [width, setWidth] = useState(0);
@@ -60,6 +66,7 @@ export function StackedBarChart({ buckets, maxHours, height = 190 }: Props) {
             const slot = chartWidth / buckets.length;
             const barWidth = Math.min(26, slot * 0.55);
             const x = PAD_LEFT + slot * bucketIndex + (slot - barWidth) / 2;
+            const totalMs = bucket.segments.reduce((acc, s) => acc + s.valueMs, 0);
             let accumulated = 0;
             return (
               <G key={bucket.key}>
@@ -81,6 +88,18 @@ export function StackedBarChart({ buckets, maxHours, height = 190 }: Props) {
                     />
                   );
                 })}
+                {totalMs > 0 && (
+                  <SvgText
+                    x={x + barWidth / 2}
+                    y={PAD_TOP + chartHeight - accumulated - 4}
+                    fontSize={9}
+                    fontWeight="700"
+                    fill={COLORS.ink}
+                    textAnchor="middle"
+                  >
+                    {formatBarHours(totalMs)}
+                  </SvgText>
+                )}
                 <SvgText
                   x={x + barWidth / 2}
                   y={height - 7}

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { Redirect } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -17,6 +18,7 @@ export function ChargeScreen() {
   const { user, entries, settings, setChargeRate } = useTime();
   const [anchor, setAnchor] = useState(() => Date.now());
   const [rateDraft, setRateDraft] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const isAdmin = user?.isAdmin === true;
   const rate = settings.chargeRate;
@@ -26,6 +28,12 @@ export function ChargeScreen() {
   );
 
   if (!isAdmin) return <Redirect href="/payment" />;
+
+  async function copyAccountText(id: string, text: string) {
+    await Clipboard.setStringAsync(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1500);
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -71,16 +79,37 @@ export function ChargeScreen() {
             const gross = hours * rate;
             const duty = Math.round(gross * DUTY_RATE);
             const total = Math.round(gross) - duty;
+            const block = [
+              `Account ${person.name}`,
+              `Working Rate: ${rate.toLocaleString('en-US')}$/hr`,
+              `Working Hour: ${hours}h`,
+              `Duty: => ${formatMoney(duty)}$`,
+              `Total: => ${formatMoney(total)}$`,
+            ].join('\n');
             return (
               <View key={person.id} style={styles.card}>
                 <View style={styles.accountRow}>
                   <View style={[styles.avatar, { backgroundColor: person.color }]}>
                     <Text style={styles.avatarText}>{person.initials}</Text>
                   </View>
-                  <View>
+                  <View style={styles.accountInfo}>
                     <Text style={styles.accountName}>{person.name}</Text>
                     <Text style={styles.accountRole}>{person.role}</Text>
                   </View>
+                  <Pressable
+                    onPress={() => copyAccountText(person.id, block)}
+                    hitSlop={8}
+                    style={styles.copyButton}
+                  >
+                    <Ionicons
+                      name={copiedId === person.id ? 'checkmark' : 'copy-outline'}
+                      size={16}
+                      color={COLORS.primary}
+                    />
+                    <Text style={styles.copyLabel}>
+                      {copiedId === person.id ? 'Copied' : 'Copy'}
+                    </Text>
+                  </Pressable>
                 </View>
 
                 <View style={styles.line}>
@@ -170,6 +199,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  accountInfo: {
+    flex: 1,
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EEF3FE',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  copyLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   accountName: {
     fontSize: 15,
