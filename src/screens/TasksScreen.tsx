@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AvatarStack } from '../components/AvatarStack';
 import { CalendarPicker } from '../components/CalendarPicker';
 import { DateStrip } from '../components/DateStrip';
 import { EditEntryModal } from '../components/EditEntryModal';
@@ -18,7 +17,6 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import {
   TimeEntry,
   USERS,
-  User,
   projectById,
   userById,
   workTypeById,
@@ -75,11 +73,6 @@ export function TasksScreen() {
       ),
     [entries, dayStart, isAdmin, filterUserIds, loggedUserId],
   );
-
-  const teammatesOnProject = (projectId: string): User[] => {
-    const ids = new Set(dayEntries.filter((e) => e.projectId === projectId).map((e) => e.userId));
-    return [...ids].map(userById);
-  };
 
   const measureTrash = useCallback(() => {
     trashRef.current?.measureInWindow((x, y, width, height) => {
@@ -231,7 +224,6 @@ export function TasksScreen() {
               <EntryCard
                 key={entry.id}
                 entry={entry}
-                teammates={teammatesOnProject(entry.projectId)}
                 now={now}
                 isOverTrash={isOverTrash}
                 onDrop={handleDrop}
@@ -295,7 +287,6 @@ export function TasksScreen() {
 
 function EntryCard({
   entry,
-  teammates,
   now,
   onDragStateChange,
   onHoverTrash,
@@ -304,7 +295,6 @@ function EntryCard({
   isOverTrash,
 }: {
   entry: TimeEntry;
-  teammates: User[];
   now: number;
   onDragStateChange: (active: boolean) => void;
   onHoverTrash: (over: boolean) => void;
@@ -371,7 +361,7 @@ function EntryCard({
         {...responder.panHandlers}
         style={[
           styles.entryCard,
-          { backgroundColor: project.color },
+          { backgroundColor: owner.color },
           lifting && styles.entryCardLifting,
           { transform: pan.getTranslateTransform() },
         ]}
@@ -387,7 +377,11 @@ function EntryCard({
           {formatRelativeDay(entry.dayMs, now)}
         </Text>
         <View style={styles.entryFooter}>
-          <AvatarStack users={teammates} size={18} />
+          <View style={styles.entryAvatar}>
+            <Text style={[styles.entryAvatarText, { color: owner.color }]}>
+              {owner.initials}
+            </Text>
+          </View>
           <Text style={styles.entryOwner}>{owner.name}</Text>
           <View style={[styles.typeBadge, { backgroundColor: workType.color }]}>
             <Text style={styles.typeBadgeText}>{workType.label}</Text>
@@ -603,6 +597,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 12,
+  },
+  entryAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  entryAvatarText: {
+    fontSize: 8,
+    fontWeight: '800',
   },
   entryOwner: {
     marginLeft: 8,
